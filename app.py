@@ -1,54 +1,39 @@
-import streamlit as st
+from flask import Flask, request, jsonify, render_template, session
 import requests
 from typing import List, Dict, Any
+import uuid
 
-st.set_page_config(page_title="Transcritor de Audiências", layout="wide")
+app = Flask(__name__)
+app.secret_key = 'defensoria-df-transcricoes-2025'  # Mude para uma chave mais segura em produção
 
 # Endpoints n8n
 N8N_ENDPOINT_PROCESSO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/numero-processo"
 N8N_ENDPOINT_TRANSCRICAO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/transcrever-link"
 N8N_ENDPOINT_SOLAR = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook-test/trancricao"
 
-# Estado
-if "videos" not in st.session_state:
-    st.session_state.videos = []
-if "video_selecionado" not in st.session_state:
-    st.session_state.video_selecionado = None
-if "transcricao" not in st.session_state:
-    st.session_state.transcricao = None
-if "numero_processo" not in st.session_state:
-    st.session_state.numero_processo = ""
-
 def consultar_processo(numero_processo: str) -> List[Dict[str, str]]:
-    """
-    Recebe do endpoint:
-    - Uma lista: [{"nome": ..., "documento": ...}, ...]
-    - Um único objeto: {"nome": ..., "documento": ...}
-    """
+
     try:
         resp = requests.post(N8N_ENDPOINT_PROCESSO, json={"numero_processo": numero_processo}, timeout=60)
         resp.raise_for_status()
         dados = resp.json()
         
         if isinstance(dados, list):
-            # Já é uma lista
             videos = [
                 {"nome": v.get("nome", "Sem nome"), "documento": v.get("documento")}
                 for v in dados if v.get("documento")
             ]
         elif isinstance(dados, dict) and dados.get("documento"):
-            # É um único objeto, transformar em lista
             videos = [{
                 "nome": dados.get("nome", "Sem nome"),
                 "documento": dados.get("documento")
             }]
         else:
-            st.warning(f"JSON recebido não está no formato esperado. Dados: {dados}")
             return []
         
         return videos
     except Exception as e:
-        st.error(f"Erro ao consultar processo: {e}")
+        print(f"Erro ao consultar processo: {e}")
         return []
 
 def montar_link_video(numero_processo: str, documento: str) -> str:
@@ -66,7 +51,7 @@ def transcrever_video(link_video: str, nome: str, documento: str, numero_process
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        st.error(f"Erro ao transcrever vídeo: {e}")
+        print(f"Erro ao transcrever vídeo: {e}")
         return None
 
 def enviar_solar(transcricao_texto: str):
@@ -75,7 +60,7 @@ def enviar_solar(transcricao_texto: str):
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        st.error(f"Erro ao enviar ao SOLAR: {e}")
+        print(f"Erro ao enviar ao SOLAR: {e}")
         return None
 
 def formatar_apenas_interlocutores_falas(transcricao_payload: Any) -> str:
@@ -105,70 +90,84 @@ def formatar_apenas_interlocutores_falas(transcricao_payload: Any) -> str:
     except Exception:
         return ""
 
-st.title("📑 Transcrição de Audiências")
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Entrada do número do processo
-numero_processo = st.text_input("Digite o número do processo:", value=st.session_state.numero_processo)
+@app.route('/consultar-processo', methods=['POST'])
+def consultar_processo_route():
+    data = request.get_json()
+    numero_processo = data.get('numero_processo', '').strip()
+    
+    if not numero_processo:
+        return jsonify({'success': False, 'message': 'Número do processo é obrigatório'}), 400
+    
+    videos = consultar_processo(numero_processo)
+    session['numero_processo'] = numero_processo
+    session['videos'] = videos
+    
+    # Adicionar links aos vídeos
+    for video in videos:
+        video['link'] = montar_link_video(numero_processo, video['documento'])
+    
+    return jsonify({
+        'success': True, 
+        'videos': videos,
+        'total': len(videos)
+    })
 
-# Consultar processo -> popula lista
-if st.button("Consultar Processo"):
-    if numero_processo.strip():
-        st.session_state.numero_processo = numero_processo.strip()
-        st.session_state.videos = consultar_processo(st.session_state.numero_processo)
-        st.session_state.video_selecionado = None
-        st.session_state.transcricao = None
+@app.route('/transcrever', methods=['POST'])
+def transcrever_route():
+    data = request.get_json()
+    documento = data.get('documento')
+    
+    if not documento:
+        return jsonify({'success': False, 'message': 'Documento é obrigatório'}), 400
+    
+    videos = session.get('videos', [])
+    numero_processo = session.get('numero_processo', '')
+    
+    # Encontrar o vídeo selecionado
+    video_selecionado = next((v for v in videos if v['documento'] == documento), None)
+    
+    if not video_selecionado:
+        return jsonify({'success': False, 'message': 'Vídeo não encontrado'}), 404
+    
+    # Transcrever
+    link = montar_link_video(numero_processo, documento)
+    transcricao_payload = transcrever_video(
+        link,
+        video_selecionado['nome'],
+        documento,
+        numero_processo
+    )
+    
+    if transcricao_payload:
+        transcricao_texto = formatar_apenas_interlocutores_falas(transcricao_payload)
+        session['transcricao'] = transcricao_texto
+        session['video_selecionado'] = video_selecionado
+        
+        return jsonify({
+            'success': True,
+            'transcricao': transcricao_texto,
+            'video': video_selecionado
+        })
     else:
-        st.warning("Digite um número de processo válido.")
+        return jsonify({'success': False, 'message': 'Erro ao transcrever vídeo'}), 500
 
-# Lista de vídeos como botões/opções
-if st.session_state.videos:
-    st.subheader("📹 Vídeos encontrados:")
-    for i, video in enumerate(st.session_state.videos):
-        col1, col2, col3 = st.columns([3, 2, 2])
-        
-        with col1:
-            st.write(f"**{video['nome']}**")
-        
-        with col2:
-            link = montar_link_video(st.session_state.numero_processo, video["documento"])
-            st.markdown(f'<a href="{link}" target="_blank" rel="noopener noreferrer">🔗 Ver vídeo</a>', unsafe_allow_html=True)
-        
-        with col3:
-            if st.button("Selecionar", key=f"btn_{i}"):
-                st.session_state.video_selecionado = video
-                st.success(f"Vídeo selecionado: {video['nome']}")
-        
-        st.divider()
-else:
-    st.info("Nenhum vídeo retornado para este número de processo.")
-
-# Transcrição do vídeo selecionado
-if st.session_state.video_selecionado:
-    st.subheader("📝 Vídeo selecionado para transcrição:")
-    st.write(f"**{st.session_state.video_selecionado['nome']}**")
+@app.route('/enviar-solar', methods=['POST'])
+def enviar_solar_route():
+    transcricao = session.get('transcricao', '')
     
-    if st.button("🎤 Transcrever"):
-        link = montar_link_video(
-            st.session_state.numero_processo,
-            st.session_state.video_selecionado["documento"]
-        )
-        transcricao_payload = transcrever_video(
-            link,
-            st.session_state.video_selecionado["nome"],
-            st.session_state.video_selecionado["documento"],
-            st.session_state.numero_processo
-        )
-        if transcricao_payload:
-            st.session_state.transcricao = transcricao_payload
-            st.success("Transcrição recebida!")
-
-# Exibição da transcrição
-if st.session_state.transcricao:
-    st.subheader("📝 Interlocutores e falas")
-    texto_formatado = formatar_apenas_interlocutores_falas(st.session_state.transcricao)
-    st.text_area("Transcrição (apenas nome e fala)", texto_formatado, height=480)
+    if not transcricao:
+        return jsonify({'success': False, 'message': 'Nenhuma transcrição encontrada'}), 400
     
-    if st.button("📤 Enviar ao SOLAR"):
-        resp = enviar_solar(texto_formatado)
-        if resp is not None:
-            st.success("Transcrição enviada ao SOLAR com sucesso!")
+    resultado = enviar_solar(transcricao)
+    
+    if resultado is not None:
+        return jsonify({'success': True, 'message': 'Transcrição enviada ao SOLAR com sucesso!'})
+    else:
+        return jsonify({'success': False, 'message': 'Erro ao enviar ao SOLAR'}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)

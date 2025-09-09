@@ -7,6 +7,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8501
+EXPOSE 5000
 
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    FLASK_APP=app.py
+
+CMD ["python", "app.py"]
