@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 import uuid
 
 app = Flask(__name__)
-app.secret_key = 'defensoria-df-transcricoes-2025'  # Mude para uma chave mais segura em produção
+app.secret_key = 'UAhsuHAUSHUHSUHAUhsUAHusHA'
 
 # Endpoints n8n
 N8N_ENDPOINT_PROCESSO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/numero-processo"
