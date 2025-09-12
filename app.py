@@ -8,7 +8,7 @@ app.secret_key = 'UAhsuHAUSHUHSUHAUhsUAHusHA'
 
 # Endpoints n8n
 N8N_ENDPOINT_PROCESSO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/numero-processo"
-N8N_ENDPOINT_TRANSCRICAO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook-test/transcrever-link"
+N8N_ENDPOINT_TRANSCRICAO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/transcrever-link"
 N8N_ENDPOINT_SOLAR = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook-test/trancricao"
 
 def consultar_processo(numero_processo: str) -> List[Dict[str, str]]:
