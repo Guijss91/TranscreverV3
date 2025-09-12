@@ -8,11 +8,10 @@ app.secret_key = 'UAhsuHAUSHUHSUHAUhsUAHusHA'
 
 # Endpoints n8n
 N8N_ENDPOINT_PROCESSO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/numero-processo"
-N8N_ENDPOINT_TRANSCRICAO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook/transcrever-link"
+N8N_ENDPOINT_TRANSCRICAO = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook-test/transcrever-link"
 N8N_ENDPOINT_SOLAR = "https://laboratorio-n8n.nu7ixt.easypanel.host/webhook-test/trancricao"
 
 def consultar_processo(numero_processo: str) -> List[Dict[str, str]]:
-
     try:
         resp = requests.post(N8N_ENDPOINT_PROCESSO, json={"numero_processo": numero_processo}, timeout=60)
         resp.raise_for_status()
@@ -64,6 +63,10 @@ def enviar_solar(transcricao_texto: str):
         return None
 
 def formatar_apenas_interlocutores_falas(transcricao_payload: Any) -> str:
+    """
+    Extrai o campo 'content' do novo formato JSON retornado pelo n8n.
+    Novo formato: [{"choices": [{"message": {"content": "texto..."}}]}]
+    """
     try:
         data = None
         if isinstance(transcricao_payload, list) and transcricao_payload:
@@ -72,21 +75,16 @@ def formatar_apenas_interlocutores_falas(transcricao_payload: Any) -> str:
             data = transcricao_payload
         else:
             return ""
-
-        utterances = data.get("utterances", [])
-        linhas = []
-
-        if isinstance(utterances, list) and utterances:
-            for utt in utterances:
-                speaker = (utt.get("speaker") or "Interlocutor").strip()
-                text = (utt.get("text") or "").strip()
-                if not text:
-                    continue
-                linhas.append(f"{speaker}:\n{text}\n")
-            return "\n".join(linhas).strip()
-
-        texto = (data.get("text") or "").strip()
-        return texto
+        
+        # Extrai o conteúdo do novo formato JSON
+        choices = data.get("choices", [])
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message", {})
+            content = message.get("content", "")
+            if isinstance(content, str):
+                return content.strip()
+        
+        return ""
     except Exception:
         return ""
 
