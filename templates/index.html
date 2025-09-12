@@ -471,6 +471,14 @@
         setLoadingButton(btnTranscrever, true);
         ocultarMensagem();
 
+        // Rolar automaticamente para baixo ao clicar no botão
+        setTimeout(() => {
+          document.getElementById("areaTranscricao").scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 500);
+
         try {
           const response = await fetch("/transcrever", {
             method: "POST",
@@ -490,6 +498,14 @@
               .getElementById("areaTranscricao")
               .classList.remove("hidden");
             mostrarMensagem("Transcrição concluída com sucesso!");
+
+            // Rolar novamente após a transcrição aparecer
+            setTimeout(() => {
+              document.getElementById("areaTranscricao").scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }, 100);
           } else {
             mostrarMensagem(
               data.message || "Erro ao transcrever vídeo",
